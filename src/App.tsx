@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
-import { swap_usdc_to_carbon } from './services/SwapService'
+import { fetch_user_shares, swap_usdc_to_carbon, USER_ADDRESSES } from './services/SwapService'
 
 function App() {
   const [steps, setSteps] = useState<bigint[]>([]);
@@ -21,14 +21,14 @@ function App() {
       <div className="card">
         <button
           onClick={async () => {
-            const result = await swap_usdc_to_carbon();
+            const result = await fetch_user_shares(USER_ADDRESSES);
             setSteps(result);
           }}
         >
-          SWAP
+          QUERY
         </button>
         <p>
-          steps for USDC to CARBON are {steps}
+          shares {steps}
         </p>
       </div>
       <p className="read-the-docs">

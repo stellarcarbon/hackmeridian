@@ -1,10 +1,15 @@
-import { Keypair, TransactionBuilder, Asset, Operation } from "@stellar/stellar-sdk";
+import { Keypair, TransactionBuilder, Asset, Operation, Contract, xdr, nativeToScVal, Address, scValToNative } from "@stellar/stellar-sdk";
 import { Server } from "@stellar/stellar-sdk/rpc";
 import { Client, networks } from "soroswap-router";
 
 const rpcUrl = 'https://soroban-testnet.stellar.org'
 const USDC_SAC = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
 const CARBON_SAC = "CCVMSAUB5RSCN7VFA2GESPVGRBNDHLQG5YDA7DST63OXJB5YBZGKEUVU"
+const TESTNET_VAULT_ADDRESS = 'CB4CEQW6W2HNVN3RA5T327T66N4DGIC24FONEZFKGUZVZDINK4WC5MXI';
+export const USER_ADDRESSES = [
+  "GCH6YKNJ3KPESGSAIGBNHRNCIYXXXSRVU7OC552RDGQFHZ4SYRI26DQE",
+  "CB4CEQW6W2HNVN3RA5T327T66N4DGIC24FONEZFKGUZVZDINK4WC5MXI",
+];
 
 async function setup_account() {
   const keypair = Keypair.random();
@@ -69,8 +74,8 @@ async function setup_account() {
   return keypair;
 }
 
-export async function swap_usdc_to_carbon() {
-    const source_amount = 50_000_000n;
+export async function swap_usdc_to_carbon(): Promise<bigint[]> {
+    const source_amount = 400_000_000n;
     const source_keypair = Keypair.fromSecret("SCHQO6J7CTLQGZGJO2WENSNHIEA4WGAMKP36AGUKAIB22WKRQWFZPJXW");
     // yes i know i'm exposing this secret
     // and here's its pubkey: GCM4NRBFDMVJ3KSQLY4HUGYVFLNGXZ7NYPHUNC2RHSU6ZL5ARJC3UR7D
@@ -99,4 +104,35 @@ export async function swap_usdc_to_carbon() {
     const { result: steps } = await swap_tx.signAndSend();
 
     return steps.unwrap()
+}
+
+
+export async function fetch_user_shares(addresses: string[]): Promise<Record<string, number>> {
+  const server = new Server(rpcUrl);
+  const balances: Record<string, bigint> = {};
+
+  // Fetch balances for each address
+  for (const address of addresses) {
+    const storage_key = xdr.ScVal.scvVec([
+      nativeToScVal("Balance", { type: "symbol" }),
+      new Address(address).toScVal()
+    ]);
+    const data = await server.getContractData(TESTNET_VAULT_ADDRESS, storage_key);
+    const entry_data = data.val;
+    const sc_val = entry_data.value().val();
+    const balance = scValToNative(sc_val) as bigint;
+    balances[address] = balance;
+  }
+
+  // Calculate total balance
+  const total = Object.values(balances).reduce((acc, b) => acc + b, 0n);
+
+  // Normalize to floats so sum is 1
+  const normalized: Record<string, number> = {};
+  for (const [address, balance] of Object.entries(balances)) {
+    normalized[address] = total === 0n ? 0 : Number(balance) / Number(total);
+  }
+
+  console.log(normalized)
+  return normalized;
 }
