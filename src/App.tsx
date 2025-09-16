@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import React, { useState } from 'react';
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
+import { swap_usdc_to_carbon } from './services/SwapService'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [steps, setSteps] = useState<bigint[]>([]);
 
   return (
     <>
@@ -18,11 +19,16 @@ function App() {
       </div>
       <h1>Vite + React</h1>
       <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
+        <button
+          onClick={async () => {
+            const result = await swap_usdc_to_carbon();
+            setSteps(result);
+          }}
+        >
+          SWAP
         </button>
         <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
+          steps for USDC to CARBON are {steps}
         </p>
       </div>
       <p className="read-the-docs">
