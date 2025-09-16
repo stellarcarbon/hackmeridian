@@ -1,14 +1,21 @@
-import { Keypair, TransactionBuilder, Asset, Operation, Contract, xdr, nativeToScVal, Address, scValToNative } from "@stellar/stellar-sdk";
+import { Keypair, TransactionBuilder, Asset, Operation, xdr, nativeToScVal, Address, scValToNative } from "@stellar/stellar-sdk";
 import { Server } from "@stellar/stellar-sdk/rpc";
+import { client as sc_client, buildSinkCarbonXdr } from "@stellarcarbon/sc-sdk";
 import { Client, networks } from "soroswap-router";
+
+sc_client.setConfig({
+  baseUrl: "https://testnet-api.stellarcarbon.io",
+});
 
 const rpcUrl = 'https://soroban-testnet.stellar.org'
 const USDC_SAC = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
 const CARBON_SAC = "CCVMSAUB5RSCN7VFA2GESPVGRBNDHLQG5YDA7DST63OXJB5YBZGKEUVU"
-const TESTNET_VAULT_ADDRESS = 'CB4CEQW6W2HNVN3RA5T327T66N4DGIC24FONEZFKGUZVZDINK4WC5MXI';
+const TESTNET_VAULT_ADDRESS = 'CCFZE6TOEZSTO2OEY5235UKFBB45BULTEPQ2GSKFXOGMYSO523W5FBCC';
+const FEE_ADDRESS = "GCILP4HWE2QGEO4KUMOZ6S6J3A46W47EVCGZW2YPYCPH5CQF6EACNBCN";
+// TODO: replace these addresses with actual TVault ones
 export const USER_ADDRESSES = [
-  "GCH6YKNJ3KPESGSAIGBNHRNCIYXXXSRVU7OC552RDGQFHZ4SYRI26DQE",
-  "CB4CEQW6W2HNVN3RA5T327T66N4DGIC24FONEZFKGUZVZDINK4WC5MXI",
+  "GCMFQP44AR32S7IRIUKNOEJW5PNWOCLRHLQWSHUCSV4QZOMUXZOVA7Q2",
+  "GDOFDSMFRPOYTOLWODK4O6BZTGDJ4GRHLHX5THXN4TIFE2SXASQYFLPJ",
 ];
 
 async function setup_account() {
@@ -56,18 +63,18 @@ async function setup_account() {
     
     // Poll until we get a final status
     while (getResponse.status === "NOT_FOUND") {
-        // Wait a bit before checking again
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        getResponse = await server.getTransaction(resp.hash);
+      // Wait a bit before checking again
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      getResponse = await server.getTransaction(resp.hash);
     }
     
     // Now we have either SUCCESS or FAILED
     if (getResponse.status === "SUCCESS") {
-        console.log("Transaction succeeded!");
-        // Proceed with your logic
+      console.log("Transaction succeeded!");
+      // Proceed with your logic
     } else {
-        console.log("Transaction failed:", getResponse);
-        // Handle the error
+      console.log("Transaction failed:", getResponse);
+      // Handle the error
     }
   }
 
@@ -85,20 +92,20 @@ export async function swap_usdc_to_carbon(): Promise<bigint[]> {
         rpcUrl,
         publicKey: source_keypair.publicKey(),
         signTransaction: async (txXdr) => {
-            const tx = TransactionBuilder.fromXDR(txXdr, networks.testnet.networkPassphrase);
-            tx.sign(source_keypair);
-            return { signedTxXdr: tx.toXDR(), signerAddress: source_keypair.publicKey() };
+          const tx = TransactionBuilder.fromXDR(txXdr, networks.testnet.networkPassphrase);
+          tx.sign(source_keypair);
+          return { signedTxXdr: tx.toXDR(), signerAddress: source_keypair.publicKey() };
         },
     })
     const time_in_ms = new Date().getTime();
     const deadline = 60n + BigInt(Math.trunc(time_in_ms / 1000));
 
     const swap_tx = await router.swap_exact_tokens_for_tokens({
-        amount_in: source_amount,
-        amount_out_min: source_amount / 30n,
-        path: [USDC_SAC, CARBON_SAC],
-        to: source_keypair.publicKey(),
-        deadline
+      amount_in: source_amount,
+      amount_out_min: source_amount / 30n,
+      path: [USDC_SAC, CARBON_SAC],
+      to: source_keypair.publicKey(),
+      deadline
     });
     console.log(swap_tx)
     const { result: steps } = await swap_tx.signAndSend();
@@ -135,4 +142,30 @@ export async function fetch_user_shares(addresses: string[]): Promise<Record<str
 
   console.log(normalized)
   return normalized;
+}
+
+
+export async function sink_user_carbon(total_carbon: number, user_shares: Record<string, number>) {
+  const results: any[] = [];
+
+  // Sink CARBON for each vault user, in proportion to shares
+  for (const [user, share] of Object.entries(user_shares)) {
+    // Truncate to 3 decimals (not rounded)
+    const carbon_share = Math.trunc(total_carbon * share * 1000) / 1000;
+
+    const { data } = await buildSinkCarbonXdr({
+      query: {
+        funder: FEE_ADDRESS,
+        recipient: user,
+        carbon_amount: carbon_share,
+        memo_type: 'text',
+        memo_value: "Tansu Vault"
+      }
+    });
+
+    console.log(data);
+    results.push(data);
+  }
+
+  return results;
 }
